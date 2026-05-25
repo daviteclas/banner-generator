@@ -21,6 +21,8 @@ export const AutoGenerator = () => {
   const [bgFile, setBgFile] = useState<File | null>(null);
   const [productFile, setProductFile] = useState<File | null>(null);
   const [productPosition, setProductPosition] = useState<'left' | 'center' | 'right'>('center');
+  const [isDraggingBg, setIsDraggingBg] = useState(false);
+  const [isDraggingProduct, setIsDraggingProduct] = useState(false);
 
   const setView = useEditorStore((state) => state.setView);
   const setFormat = useEditorStore((state) => state.setFormat);
@@ -35,6 +37,46 @@ export const AutoGenerator = () => {
 
   const handleProductChange = (e: ChangeEvent<HTMLInputElement>) => {
     if (e.target.files?.[0]) setProductFile(e.target.files[0]);
+  };
+
+  const handleBgDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDraggingBg(false);
+    if (e.dataTransfer.files?.[0]) setBgFile(e.dataTransfer.files[0]);
+  };
+
+  const handleProductDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDraggingProduct(false);
+    if (e.dataTransfer.files?.[0]) setProductFile(e.dataTransfer.files[0]);
+  };
+
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+  };
+
+  const handleBgDragEnter = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDraggingBg(true);
+  };
+
+  const handleBgDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+      setIsDraggingBg(false);
+    }
+  };
+
+  const handleProductDragEnter = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDraggingProduct(true);
+  };
+
+  const handleProductDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+      setIsDraggingProduct(false);
+    }
   };
 
   const handleGenerate = async () => {
@@ -128,7 +170,17 @@ export const AutoGenerator = () => {
 
         <div className="space-y-6">
           {/* Fundo */}
-          <div className="border-2 border-dashed border-gray-300 dark:border-slate-600 rounded-lg p-6 text-center hover:bg-gray-50 dark:hover:bg-slate-600 transition-colors">
+          <div 
+            className={`border-2 border-dashed rounded-lg p-6 text-center transition-colors ${
+              isDraggingBg 
+                ? 'border-indigo-500 bg-indigo-50 dark:border-indigo-400 dark:bg-indigo-900/30' 
+                : 'border-gray-300 dark:border-slate-600 hover:bg-gray-50 dark:hover:bg-slate-600'
+            }`}
+            onDragOver={handleDragOver}
+            onDragEnter={handleBgDragEnter}
+            onDragLeave={handleBgDragLeave}
+            onDrop={handleBgDrop}
+          >
             <label className="cursor-pointer block">
               <span className="block text-lg font-medium text-gray-700 dark:text-gray-200 mb-2">1. Imagem de Fundo</span>
               <span className="block text-sm text-gray-500 dark:text-gray-400 mb-4">Recomendado formato paisagem</span>
@@ -140,7 +192,17 @@ export const AutoGenerator = () => {
           </div>
 
           {/* Produto */}
-          <div className="border-2 border-dashed border-gray-300 dark:border-slate-600 rounded-lg p-6 text-center hover:bg-gray-50 dark:hover:bg-slate-600 transition-colors">
+          <div 
+            className={`border-2 border-dashed rounded-lg p-6 text-center transition-colors ${
+              isDraggingProduct 
+                ? 'border-indigo-500 bg-indigo-50 dark:border-indigo-400 dark:bg-indigo-900/30' 
+                : 'border-gray-300 dark:border-slate-600 hover:bg-gray-50 dark:hover:bg-slate-600'
+            }`}
+            onDragOver={handleDragOver}
+            onDragEnter={handleProductDragEnter}
+            onDragLeave={handleProductDragLeave}
+            onDrop={handleProductDrop}
+          >
             <label className="cursor-pointer block">
               <span className="block text-lg font-medium text-gray-700 dark:text-gray-200 mb-2">2. Imagem do Produto</span>
               <span className="block text-sm text-gray-500 dark:text-gray-400 mb-4">A IA removerá o fundo desta imagem</span>

@@ -14,12 +14,37 @@ export const ImageStandardizer = () => {
   
   const [isProcessing, setIsProcessing] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
       // Adiciona os novos arquivos à lista existente (se quiser permitir adição iterativa)
       // Aqui vamos apenas substituir pela nova seleção para simplificar o fluxo
       setFiles(Array.from(e.target.files));
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent<HTMLLabelElement>) => {
+    e.preventDefault();
+    setIsDragging(false);
+    if (e.dataTransfer.files) {
+      setFiles(Array.from(e.dataTransfer.files));
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent<HTMLLabelElement>) => {
+    e.preventDefault();
+  };
+
+  const handleDragEnter = (e: React.DragEvent<HTMLLabelElement>) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent<HTMLLabelElement>) => {
+    e.preventDefault();
+    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+      setIsDragging(false);
     }
   };
 
@@ -161,7 +186,17 @@ export const ImageStandardizer = () => {
 
           {/* Upload Area */}
           <div className="mb-8">
-            <label className="flex flex-col items-center justify-center w-full h-40 border-2 border-gray-300 dark:border-slate-600 border-dashed rounded-xl cursor-pointer bg-gray-50 dark:bg-slate-600 hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors">
+            <label 
+              className={`flex flex-col items-center justify-center w-full h-40 border-2 border-dashed rounded-xl cursor-pointer transition-colors ${
+                isDragging
+                  ? 'border-green-500 bg-green-50 dark:border-green-400 dark:bg-green-900/30 hover:bg-green-400 dark:hover:bg-green-900/30' 
+                  : 'border-gray-300 dark:border-slate-600 bg-gray-50 dark:bg-slate-600 hover:bg-gray-100 dark:hover:bg-slate-700'
+              }`}
+              onDragOver={handleDragOver}
+              onDragEnter={handleDragEnter}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+            >
               <div className="flex flex-col items-center justify-center pt-5 pb-6">
                 <span className="material-symbols-outlined text-4xl text-gray-400 dark:text-gray-500 mb-3">upload_file</span>
                 <p className="mb-2 text-sm text-gray-500 dark:text-gray-400">
