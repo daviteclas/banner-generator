@@ -1,4 +1,4 @@
-// src/features/sidebar/components/ImageUploader.tsx
+import { useState } from 'react';
 import type { ChangeEvent } from 'react';
 import { useEditorStore } from '../../../store/useEditorStore';
 
@@ -11,40 +11,67 @@ export const ImageUploader = () => {
   // Extraímos apenas a função addLayer da nossa store
   const addLayer = useEditorStore((state) => state.addLayer);
 
-  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
-    // Pega o primeiro arquivo selecionado
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const [isDragging, setIsDragging] = useState(false);
 
+  const processFile = (file: File) => {
     // Cria uma URL temporária na memória do navegador para esta imagem
     const imageUrl = URL.createObjectURL(file);
 
     // Precisamos descobrir a largura e altura originais da imagem
-    // Para isso, criamos um elemento de imagem HTML "invisível"
     const img = new Image();
     
     img.onload = () => {
       // Quando a imagem terminar de carregar na memória, calculamos um tamanho inicial.
-      // Se a imagem for muito grande, reduzimos para caber melhor no canvas de 1200x628.
       const maxWidth = 400; 
       const scale = img.width > maxWidth ? maxWidth / img.width : 1;
 
       // Adiciona a nova camada ao nosso estado global
       addLayer({
-        id: crypto.randomUUID(), // Gera um ID único nativo do navegador
+        id: crypto.randomUUID(),
         url: imageUrl,
-        x: 50, // Posição inicial no eixo X
-        y: 50, // Posição inicial no eixo Y
+        x: 50,
+        y: 50,
         width: img.width * scale,
         height: img.height * scale,
         isBackground: false,
       });
-
-      // Limpa o input para permitir subir a mesma imagem duas vezes seguidas, se desejado
-      e.target.value = '';
     };
 
     img.src = imageUrl;
+  };
+
+  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      processFile(file);
+    }
+    // Limpa o input para permitir subir a mesma imagem duas vezes seguidas
+    e.target.value = '';
+  };
+
+  const handleDrop = (e: React.DragEvent<HTMLLabelElement>) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file && file.type.startsWith('image/')) {
+      processFile(file);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent<HTMLLabelElement>) => {
+    e.preventDefault();
+  };
+
+  const handleDragEnter = (e: React.DragEvent<HTMLLabelElement>) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent<HTMLLabelElement>) => {
+    e.preventDefault();
+    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+      setIsDragging(false);
+    }
   };
 
   return (
@@ -52,10 +79,24 @@ export const ImageUploader = () => {
       <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">
         Adicionar Imagem
       </label>
-      {/* Escondemos o input padrão feio e estilizamos o label para agir como botão */}
-      <label className="cursor-pointer bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center gap-2 py-2 px-4 rounded-md transition-colors">
-        <span className="material-symbols-outlined">upload_file</span>
-        <span>Escolher arquivo</span>
+      {/* Componente Dropzone */}
+      <label 
+        className={`cursor-pointer flex flex-col items-center justify-center gap-2 py-6 px-4 rounded-xl border-2 border-dashed transition-all duration-200 ${
+          isDragging 
+            ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400' 
+            : 'border-gray-300 dark:border-slate-600 bg-gray-50 dark:bg-slate-800 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700'
+        }`}
+        onDragOver={handleDragOver}
+        onDragEnter={handleDragEnter}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+      >
+        <span className={`material-symbols-outlined transition-all ${isDragging ? 'text-4xl scale-110' : 'text-3xl'}`}>
+          {isDragging ? 'file_download' : 'add_photo_alternate'}
+        </span>
+        <span className="text-sm font-medium text-center">
+          {isDragging ? 'Solte a imagem aqui' : 'Clique ou arraste uma imagem'}
+        </span>
         <input 
           type="file" 
           accept="image/png, image/jpeg, image/webp" 
