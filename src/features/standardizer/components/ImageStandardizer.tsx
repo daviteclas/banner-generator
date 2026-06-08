@@ -3,6 +3,10 @@ import { useState } from 'react';
 import JSZip from 'jszip';
 import { useEditorStore } from '../../../store/useEditorStore';
 
+// Configurações do Cloudinary (podem ser configuradas no arquivo .env na raiz do projeto)
+const CLOUD_NAME = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME || 'djwjvrdhe';
+const UPLOAD_PRESET = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET || 'padronizador';
+
 export const ImageStandardizer = () => {
   const setView = useEditorStore((state) => state.setView);
   const isDarkMode = useEditorStore((state) => state.isDarkMode);
@@ -52,6 +56,79 @@ export const ImageStandardizer = () => {
     setFiles(files.filter((_, index) => index !== indexToRemove));
   };
 
+  const getImageDimensions = (file: File): Promise<{width: number, height: number}> => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+         resolve({width: img.width, height: img.height});
+         URL.revokeObjectURL(img.src);
+      };
+      img.src = URL.createObjectURL(file);
+    });
+  };
+
+  const processImageWithCloudinary = async (file: File, width: number, height: number): Promise<Blob | null> => {
+    if (!CLOUD_NAME || !UPLOAD_PRESET) {
+      console.warn('Cloudinary não configurado. Realizando corte padrão.');
+      return null;
+    }
+
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('upload_preset', UPLOAD_PRESET);
+
+    try {
+      const uploadRes = await fetch(`https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!uploadRes.ok) throw new Error('Erro ao fazer upload da imagem');
+
+      const data = await uploadRes.json();
+      const publicId = data.public_id;
+
+      // URL de transformação com Generative Fill
+      const genFillUrl = `https://res.cloudinary.com/${CLOUD_NAME}/image/upload/c_pad,b_gen_fill,w_${width},h_${height}/${publicId}.jpg`;
+
+      // O Cloudinary segura a requisição até a IA gerar a imagem
+      const imgRes = await fetch(genFillUrl);
+      if (!imgRes.ok) throw new Error('Erro ao gerar imagem no Cloudinary');
+
+      return await imgRes.blob();
+    } catch (error) {
+      console.error(error);
+      return null;
+    }
+  };
+
+  const processImageCanvas = (file: File, width: number, height: number): Promise<Blob | null> => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return resolve(null);
+
+        // Lógica de object-fit: cover
+        const scale = Math.max(width / img.width, height / img.height);
+        const x = (width / 2) - (img.width / 2) * scale;
+        const y = (height / 2) - (img.height / 2) * scale;
+
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, width, height);
+
+        ctx.drawImage(img, x, y, img.width * scale, img.height * scale);
+        
+        canvas.toBlob((blob) => resolve(blob), 'image/jpeg', 0.95);
+        URL.revokeObjectURL(img.src);
+      };
+      img.src = URL.createObjectURL(file);
+    });
+  };
+
   const handleStandardize = async () => {
     if (files.length === 0) return;
     setIsProcessing(true);
@@ -62,9 +139,27 @@ export const ImageStandardizer = () => {
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
-      const blob = await processImage(file, targetWidth, targetHeight);
+      
+      const dims = await getImageDimensions(file);
+      const imgAspectRatio = dims.width / dims.height;
+      const targetAspectRatio = targetWidth / targetHeight;
+      
+      const isSameRatio = Math.abs(imgAspectRatio - targetAspectRatio) < 0.05; // tolerância de 5%
+
+      let blob: Blob | null = null;
+
+      if (isSameRatio) {
+        blob = await processImageCanvas(file, targetWidth, targetHeight);
+      } else {
+        blob = await processImageWithCloudinary(file, targetWidth, targetHeight);
+        
+        // Fallback para caso o cloudinary falhe (por falta de config ou erro)
+        if (!blob) {
+           blob = await processImageCanvas(file, targetWidth, targetHeight);
+        }
+      }
+
       if (blob && folder) {
-        // Garantir que a extensão final seja jpg
         const originalNameWithoutExt = file.name.substring(0, file.name.lastIndexOf('.')) || file.name;
         folder.file(`${originalNameWithoutExt}-padronizada.jpg`, blob);
       }
@@ -83,38 +178,6 @@ export const ImageStandardizer = () => {
     URL.revokeObjectURL(url);
 
     setIsProcessing(false);
-  };
-
-  const processImage = (file: File, width: number, height: number): Promise<Blob | null> => {
-    return new Promise((resolve) => {
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return resolve(null);
-
-        // Lógica de object-fit: cover
-        // Precisamos encontrar a escala que faz a imagem cobrir todo o espaço sem deixar bordas vazias
-        const scale = Math.max(width / img.width, height / img.height);
-        
-        // Posição para centralizar o corte (crop center)
-        const x = (width / 2) - (img.width / 2) * scale;
-        const y = (height / 2) - (img.height / 2) * scale;
-
-        // Fundo branco (caso seja PNG transparente, evitamos fundo preto no JPEG)
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(0, 0, width, height);
-
-        // Desenhar imagem redimensionada
-        ctx.drawImage(img, x, y, img.width * scale, img.height * scale);
-        
-        canvas.toBlob((blob) => resolve(blob), 'image/jpeg', 0.95);
-        URL.revokeObjectURL(img.src); // Limpar memória
-      };
-      img.src = URL.createObjectURL(file);
-    });
   };
 
   return (
