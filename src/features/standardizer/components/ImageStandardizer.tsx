@@ -67,7 +67,7 @@ export const ImageStandardizer = () => {
     });
   };
 
-  const processImageWithCloudinary = async (file: File, width: number, height: number): Promise<Blob | null> => {
+  const processImageWithCloudinary = async (file: File, width: number, height: number, dims: {width: number, height: number}): Promise<Blob | null> => {
     if (!CLOUD_NAME || !UPLOAD_PRESET) {
       console.warn('Cloudinary não configurado. Realizando corte padrão.');
       return null;
@@ -88,10 +88,33 @@ export const ImageStandardizer = () => {
       const data = await uploadRes.json();
       const publicId = data.public_id;
 
-      // URL de transformação com Generative Fill
-      const genFillUrl = `https://res.cloudinary.com/${CLOUD_NAME}/image/upload/c_pad,b_gen_fill,w_${width},h_${height}/${publicId}.jpg`;
+      // Cálculo de encadeamento para Generative Fill
+      const sourceRatio = dims.width / dims.height;
+      const targetRatio = width / height;
+      let genFillUrl = '';
 
-      // O Cloudinary segura a requisição até a IA gerar a imagem
+      if (sourceRatio / targetRatio > 2 || targetRatio / sourceRatio > 2) {
+        // A proporção é extrema. O Cloudinary tem dificuldade de expandir muito em um único passo.
+        // Vamos encadear os passos de generative fill, expandindo no máximo 1.5x por vez.
+        const steps = [];
+        let currentRatio = sourceRatio;
+        
+        while (currentRatio / targetRatio > 1.8 || targetRatio / currentRatio > 1.8) {
+          if (currentRatio > targetRatio) {
+            currentRatio = currentRatio / 1.5;
+          } else {
+            currentRatio = currentRatio * 1.5;
+          }
+          steps.push(`c_pad,b_gen_fill,ar_${currentRatio.toFixed(3)}`);
+        }
+        steps.push(`c_pad,b_gen_fill,w_${width},h_${height}`);
+        genFillUrl = `https://res.cloudinary.com/${CLOUD_NAME}/image/upload/${steps.join('/')}/${publicId}.jpg`;
+      } else {
+        // URL de transformação direta com Generative Fill
+        genFillUrl = `https://res.cloudinary.com/${CLOUD_NAME}/image/upload/c_pad,b_gen_fill,w_${width},h_${height}/${publicId}.jpg`;
+      }
+
+      // O Cloudinary segura a requisição até a IA gerar a imagem (pode demorar em cadeias longas)
       const imgRes = await fetch(genFillUrl);
       if (!imgRes.ok) throw new Error('Erro ao gerar imagem no Cloudinary');
 
@@ -102,7 +125,7 @@ export const ImageStandardizer = () => {
     }
   };
 
-  const processImageCanvas = (file: File, width: number, height: number): Promise<Blob | null> => {
+  const processImageCanvas = (file: File, width: number, height: number, forceCover: boolean = false): Promise<Blob | null> => {
     return new Promise((resolve) => {
       const img = new Image();
       img.onload = () => {
@@ -112,8 +135,13 @@ export const ImageStandardizer = () => {
         const ctx = canvas.getContext('2d');
         if (!ctx) return resolve(null);
 
-        // Lógica de object-fit: cover
-        const scale = Math.max(width / img.width, height / img.height);
+        // Lógica para redimensionamento:
+        // - cover (Math.max): corta excessos, usado apenas se as proporções forem quase idênticas
+        // - contain (Math.min): adiciona bordas, usado no fallback para não mutilar a imagem original
+        const scale = forceCover 
+          ? Math.max(width / img.width, height / img.height)
+          : Math.min(width / img.width, height / img.height);
+          
         const x = (width / 2) - (img.width / 2) * scale;
         const y = (height / 2) - (img.height / 2) * scale;
 
@@ -149,13 +177,15 @@ export const ImageStandardizer = () => {
       let blob: Blob | null = null;
 
       if (isSameRatio) {
-        blob = await processImageCanvas(file, targetWidth, targetHeight);
+        // Proporções muito próximas: usar cover para evitar finas bordas brancas (cortará apenas uma mínima fresta)
+        blob = await processImageCanvas(file, targetWidth, targetHeight, true);
       } else {
-        blob = await processImageWithCloudinary(file, targetWidth, targetHeight);
+        blob = await processImageWithCloudinary(file, targetWidth, targetHeight, dims);
         
-        // Fallback para caso o cloudinary falhe (por falta de config ou erro)
+        // Fallback para caso o cloudinary falhe (por falta de config, timeout ou erro da IA)
         if (!blob) {
-           blob = await processImageCanvas(file, targetWidth, targetHeight);
+           // Usar contain (forceCover: false) para não cortar a imagem original se o gen fill falhar
+           blob = await processImageCanvas(file, targetWidth, targetHeight, false);
         }
       }
 
